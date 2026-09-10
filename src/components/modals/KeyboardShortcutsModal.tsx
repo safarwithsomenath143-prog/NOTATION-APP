@@ -23,6 +23,13 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
       { key: 'Shift + C', desc: 'Add chord symbol' },
       { key: 'Del / Backspace', desc: 'Clear subdivision (.) or beat (—)' },
     ]},
+    { category: 'Space Tool (Vertical System Spacing ↕)', items: [
+      { key: 'Shift + Enter', desc: 'Insert vertical space at current / selected system' },
+      { key: 'Ctrl/Cmd + Shift + ↑', desc: 'Increase vertical space (+10px)' },
+      { key: 'Ctrl/Cmd + Shift + ↓', desc: 'Decrease vertical space (-10px)' },
+      { key: 'Del / Backspace', desc: 'Remove selected vertical space' },
+      { key: 'Drag handle', desc: 'Interactively resize vertical space with mouse' },
+    ]},
     { category: 'Clipboard & Editing', items: [
       { key: 'Ctrl + X', desc: 'Cut selected notes / beat' },
       { key: 'Ctrl + C', desc: 'Copy selected notes / beat' },

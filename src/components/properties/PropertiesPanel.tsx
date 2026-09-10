@@ -200,6 +200,13 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   type InspectorTab = 'active' | 'measure' | 'score';
   const [activeTab, setActiveTab] = useState<InspectorTab>('active');
 
+  // Auto-switch to active tab when space or text is selected
+  useEffect(() => {
+    if (selection.selectionType === 'space' || selection.spacingObjectId || selectedSpacingObject) {
+      setActiveTab('active');
+    }
+  }, [selection.selectionType, selection.spacingObjectId, selectedSpacingObject]);
+
   // Input states for chord and lyric
   const [chordInput, setChordInput] = useState(activeBeatChord);
   const [lyricInput, setLyricInput] = useState(activeBeatLyric);
@@ -325,26 +332,48 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-stone-700">Distance</span>
                     <div className="flex items-center space-x-1.5">
+                      <button
+                        onClick={() =>
+                          onUpdateSpace?.(selectedSpacingObject.id, {
+                            amount: Math.max(0, (selectedSpacingObject.amount || 0) - 10),
+                          })
+                        }
+                        className="px-1.5 py-0.5 text-xs font-bold bg-stone-100 hover:bg-stone-200 text-stone-700 rounded border border-stone-200 transition-colors"
+                        title="Decrease 10px"
+                      >
+                        -10
+                      </button>
                       <input
                         type="number"
                         min="0"
-                        max="400"
+                        max="600"
                         step="5"
                         value={selectedSpacingObject.amount}
                         onChange={(e) =>
                           onUpdateSpace?.(selectedSpacingObject.id, {
-                            amount: Math.max(0, Math.min(400, parseInt(e.target.value) || 0)),
+                            amount: Math.max(0, Math.min(600, parseInt(e.target.value) || 0)),
                           })
                         }
                         className="w-16 px-1.5 py-0.5 text-right font-mono font-bold text-xs border border-stone-300 rounded focus:border-sky-500 focus:outline-none"
                       />
+                      <button
+                        onClick={() =>
+                          onUpdateSpace?.(selectedSpacingObject.id, {
+                            amount: Math.min(600, (selectedSpacingObject.amount || 0) + 10),
+                          })
+                        }
+                        className="px-1.5 py-0.5 text-xs font-bold bg-stone-100 hover:bg-stone-200 text-stone-700 rounded border border-stone-200 transition-colors"
+                        title="Increase 10px"
+                      >
+                        +10
+                      </button>
                       <span className="text-stone-500 text-[11px]">px</span>
                     </div>
                   </div>
 
                   {/* Preset Steppers */}
-                  <div className="grid grid-cols-4 gap-1 pt-1">
-                    {[15, 30, 50, 80].map((amt) => (
+                  <div className="grid grid-cols-5 gap-1 pt-1">
+                    {[15, 30, 60, 100, 150].map((amt) => (
                       <button
                         key={amt}
                         onClick={() => onUpdateSpace?.(selectedSpacingObject.id, { amount: amt })}
@@ -357,6 +386,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                         {amt}px
                       </button>
                     ))}
+                  </div>
+
+                  <div className="text-[10px] text-stone-400 text-center pt-0.5">
+                    Shortcut: <kbd className="font-mono font-semibold text-stone-600">Ctrl+Shift+↑/↓</kbd>
                   </div>
                 </div>
               </div>

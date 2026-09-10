@@ -4,8 +4,11 @@ import { SpacingObject, ToolMode, SelectionState, Measure } from '../../types/sc
 interface PageSpacingLayerProps {
   pageIndex: number;
   pageWidth: number;
+  pageHeight?: number;
+  pageMarginBottom?: number;
   staffMarginLeft: number;
   staffMarginRight: number;
+  zoom?: number;
   systems: Array<{
     systemIndex: number;
     measures: Array<{
@@ -26,7 +29,7 @@ interface PageSpacingLayerProps {
   toolMode: ToolMode;
   onSelectSpace?: (spaceId: string) => void;
   onAddSpace?: (afterMeasureId: string, amount: number, systemIndex: number) => void;
-  onUpdateSpace?: (spaceId: string, patch: Partial<SpacingObject>) => void;
+  onUpdateSpace?: (spaceId: string, patch: Partial<SpacingObject>, recordHistory?: boolean) => void;
   onDeleteSpace?: (spaceId: string) => void;
   isPrintView?: boolean;
 }
@@ -34,8 +37,11 @@ interface PageSpacingLayerProps {
 export const PageSpacingLayer: React.FC<PageSpacingLayerProps> = ({
   pageIndex,
   pageWidth,
+  pageHeight = 1123,
+  pageMarginBottom = 36,
   staffMarginLeft,
   staffMarginRight,
+  zoom = 1,
   systemPositions,
   spacingObjects,
   selection,
@@ -43,7 +49,6 @@ export const PageSpacingLayer: React.FC<PageSpacingLayerProps> = ({
   onSelectSpace,
   onAddSpace,
   onUpdateSpace,
-  onDeleteSpace,
   isPrintView = false,
 }) => {
   // Active dragging handle state
@@ -52,19 +57,25 @@ export const PageSpacingLayer: React.FC<PageSpacingLayerProps> = ({
     id: string;
     startY: number;
     initialAmount: number;
+    currentAmount: number;
   } | null>(null);
 
   // Mousemove and mouseup listeners for interactive drag-resizing of vertical space
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!dragRef.current) return;
-      const deltaY = e.clientY - dragRef.current.startY;
-      const newAmount = Math.max(0, Math.min(400, Math.round(dragRef.current.initialAmount + deltaY)));
-      onUpdateSpace?.(dragRef.current.id, { amount: newAmount });
+      const effectiveZoom = zoom > 0 ? zoom : 1;
+      const deltaY = (e.clientY - dragRef.current.startY) / effectiveZoom;
+      const newAmount = Math.max(0, Math.min(600, Math.round(dragRef.current.initialAmount + deltaY)));
+      dragRef.current.currentAmount = newAmount;
+      // Live layout update without creating hundreds of undo history steps
+      onUpdateSpace?.(dragRef.current.id, { amount: newAmount }, false);
     };
 
     const handleMouseUp = () => {
       if (dragRef.current) {
+        // Commit final resize position to undo/redo history
+        onUpdateSpace?.(dragRef.current.id, { amount: dragRef.current.currentAmount }, true);
         dragRef.current = null;
         setActiveDragId(null);
       }
@@ -76,30 +87,40 @@ export const PageSpacingLayer: React.FC<PageSpacingLayerProps> = ({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [onUpdateSpace]);
+  }, [zoom, onUpdateSpace]);
 
   if (isPrintView) {
-    // In print/PDF output, do not render editor handles/badges — only the pure layout space
+    // In print/PDF output, do not render editor handles/badges/outlines — only the pure canonical layout space
     return null;
   }
 
   const usableWidth = pageWidth - staffMarginLeft - staffMarginRight;
+  const footerReservedHeight = 44;
+  const bottomPrintableMargin = pageHeight - pageMarginBottom - footerReservedHeight;
 
   return (
     <g className="pianotastic-spacing-layer" pointerEvents="all">
-      {systemPositions.map((pos, idx) => {
-        const { globalSysIdx, systemY, measureBlockHeight, extraSpace, lastMeasure } = pos;
-        const matchingSpace = spacingObjects.find(
-          (s) => s.afterMeasureId === lastMeasure.id || s.systemIndex === globalSysIdx
-        );
+      {systemPositions.map((pos) => {
+        const { globalSysIdx, systemY, measureBlockHeight, lastMeasure } = pos;
+
+        // Primary match by anchor measure ID; fallback by system index if unanchored
+        const matchingSpace = spacingObjects.find((s) => {
+          if (s.afterMeasureId) {
+            return s.afterMeasureId === lastMeasure.id;
+          }
+          return s.systemIndex === globalSysIdx;
+        });
+
         const isSelected =
           selection.selectionType === 'space' &&
-          matchingSpace &&
+          matchingSpace !== undefined &&
           selection.spacingObjectId === matchingSpace.id;
 
-        const isLastSystemOnPage = idx === systemPositions.length - 1;
         const topY = systemY + measureBlockHeight;
-        const height = extraSpace > 0 ? extraSpace : 28;
+        const maxVisualHeight = Math.max(16, bottomPrintableMargin - topY);
+        const visualHeight = matchingSpace
+          ? Math.min(Math.max(16, matchingSpace.amount), maxVisualHeight)
+          : 28;
 
         return (
           <g key={`space-zone-p${pageIndex}-sys${globalSysIdx}-m${lastMeasure.id}`}>
@@ -112,13 +133,13 @@ export const PageSpacingLayer: React.FC<PageSpacingLayerProps> = ({
                   onSelectSpace?.(matchingSpace.id);
                 }}
               >
-                {/* Background tint when Space tool active or selected */}
+                {/* Background outline/tint when Space tool active or selected */}
                 {(toolMode === 'space' || isSelected) && (
                   <rect
                     x={staffMarginLeft}
                     y={topY}
                     width={usableWidth}
-                    height={Math.max(16, matchingSpace.amount)}
+                    height={visualHeight}
                     fill={isSelected ? 'rgba(2, 132, 199, 0.08)' : 'rgba(245, 158, 11, 0.05)'}
                     stroke={isSelected ? '#0284c7' : '#f59e0b'}
                     strokeWidth={isSelected ? 1.5 : 1}
@@ -128,14 +149,26 @@ export const PageSpacingLayer: React.FC<PageSpacingLayerProps> = ({
                   />
                 )}
 
-                {/* Center Badge & Handle */}
+                {/* Invisible hit-area if not selected and in another tool mode, allowing easy selection */}
+                {toolMode !== 'space' && !isSelected && (
+                  <rect
+                    x={staffMarginLeft}
+                    y={topY}
+                    width={usableWidth}
+                    height={Math.max(12, matchingSpace.amount)}
+                    fill="transparent"
+                    className="cursor-pointer"
+                  />
+                )}
+
+                {/* Center Badge & Quick Steppers */}
                 {(toolMode === 'space' || isSelected || activeDragId === matchingSpace.id) && (
-                  <g transform={`translate(${pageWidth / 2}, ${topY + Math.max(16, matchingSpace.amount) / 2})`}>
+                  <g transform={`translate(${pageWidth / 2}, ${topY + Math.min(visualHeight, 32) / 2})`}>
                     {/* Pill Background */}
                     <rect
-                      x={-60}
+                      x={-62}
                       y={-12}
-                      width={120}
+                      width={124}
                       height={24}
                       rx={12}
                       fill={isSelected ? '#0284c7' : '#0f172a'}
@@ -156,33 +189,35 @@ export const PageSpacingLayer: React.FC<PageSpacingLayerProps> = ({
                       ↕ {matchingSpace.amount} px
                     </text>
 
-                    {/* Quick Stepper: [-] Button */}
+                    {/* Quick Stepper: [-] Button (-5px) */}
                     <g
-                      transform="translate(-46, 0)"
+                      transform="translate(-48, 0)"
                       className="cursor-pointer"
                       onClick={(e) => {
                         e.stopPropagation();
-                        const next = Math.max(0, matchingSpace.amount - 5);
-                        onUpdateSpace?.(matchingSpace.id, { amount: next });
+                        const next = Math.max(0, (matchingSpace.amount || 0) - 5);
+                        onUpdateSpace?.(matchingSpace.id, { amount: next }, true);
                       }}
                     >
-                      <circle cx={0} cy={0} r={7} fill="rgba(255,255,255,0.2)" />
+                      <title>Decrease space by 5px</title>
+                      <circle cx={0} cy={0} r={7.5} fill="rgba(255,255,255,0.25)" />
                       <text x={0} y={3.5} fill="#fff" fontSize="11" fontWeight="bold" textAnchor="middle">
                         -
                       </text>
                     </g>
 
-                    {/* Quick Stepper: [+] Button */}
+                    {/* Quick Stepper: [+] Button (+5px) */}
                     <g
-                      transform="translate(46, 0)"
+                      transform="translate(48, 0)"
                       className="cursor-pointer"
                       onClick={(e) => {
                         e.stopPropagation();
-                        const next = Math.min(400, matchingSpace.amount + 5);
-                        onUpdateSpace?.(matchingSpace.id, { amount: next });
+                        const next = Math.min(600, (matchingSpace.amount || 0) + 5);
+                        onUpdateSpace?.(matchingSpace.id, { amount: next }, true);
                       }}
                     >
-                      <circle cx={0} cy={0} r={7} fill="rgba(255,255,255,0.2)" />
+                      <title>Increase space by 5px</title>
+                      <circle cx={0} cy={0} r={7.5} fill="rgba(255,255,255,0.25)" />
                       <text x={0} y={3.5} fill="#fff" fontSize="11" fontWeight="bold" textAnchor="middle">
                         +
                       </text>
@@ -202,11 +237,21 @@ export const PageSpacingLayer: React.FC<PageSpacingLayerProps> = ({
                         id: matchingSpace.id,
                         startY: e.clientY,
                         initialAmount: matchingSpace.amount,
+                        currentAmount: matchingSpace.amount,
                       };
                       setActiveDragId(matchingSpace.id);
                       onSelectSpace?.(matchingSpace.id);
                     }}
                   >
+                    {/* Generous touch/click line for dragging */}
+                    <rect
+                      x={0}
+                      y={-6}
+                      width={usableWidth}
+                      height={12}
+                      fill="transparent"
+                      className="cursor-ns-resize"
+                    />
                     <line
                       x1={0}
                       y1={0}
@@ -214,59 +259,76 @@ export const PageSpacingLayer: React.FC<PageSpacingLayerProps> = ({
                       y2={0}
                       stroke={isSelected ? '#0284c7' : '#cbd5e1'}
                       strokeWidth={isSelected ? 2 : 1.5}
-                      strokeDasharray="2 2"
+                      strokeDasharray="3 3"
                     />
-                    {/* Small grip dot */}
-                    <circle cx={usableWidth / 2} cy={0} r={3.5} fill={isSelected ? '#0284c7' : '#94a3b8'} />
+                    {/* Center Grip Handle */}
+                    <rect
+                      x={usableWidth / 2 - 18}
+                      y={-4}
+                      width={36}
+                      height={8}
+                      rx={4}
+                      fill={isSelected ? '#0284c7' : '#94a3b8'}
+                      className="shadow-2xs"
+                    />
                   </g>
                 )}
               </g>
             ) : (
-              /* No space yet below this system: Show "+ Add Space" insert zone when Space Tool is active */
-              toolMode === 'space' &&
-              !isLastSystemOnPage && (
+              /* No space yet below this system: Show generous insert zone when Space Tool is active */
+              toolMode === 'space' && (
                 <g
                   className="space-insert-zone cursor-pointer group"
-                  transform={`translate(0, ${topY + 6})`}
                   onClick={(e) => {
                     e.stopPropagation();
                     onAddSpace?.(lastMeasure.id, 30, globalSysIdx);
                   }}
                 >
+                  {/* Full-width transparent hit area for easy 1-click space creation */}
+                  <rect
+                    x={staffMarginLeft}
+                    y={topY}
+                    width={usableWidth}
+                    height={Math.max(28, 24)}
+                    fill="transparent"
+                    className="cursor-pointer"
+                  />
+                  {/* Subtle dashed guide line across the line */}
                   <line
                     x1={staffMarginLeft}
-                    y1={0}
+                    y1={topY + 12}
                     x2={pageWidth - staffMarginRight}
-                    y2={0}
-                    stroke="#94a3b8"
-                    strokeWidth="1"
+                    y2={topY + 12}
+                    stroke="#0284c7"
+                    strokeWidth="1.5"
                     strokeDasharray="4 4"
-                    opacity="0.6"
-                    className="group-hover:stroke-sky-500 group-hover:opacity-100 transition-opacity"
+                    opacity="0.35"
+                    className="group-hover:opacity-100 group-hover:stroke-sky-600 transition-opacity"
                   />
-                  <g transform={`translate(${pageWidth / 2}, 0)`}>
+                  {/* Add Space button badge in center */}
+                  <g transform={`translate(${pageWidth / 2}, ${topY + 12})`}>
                     <rect
-                      x={-45}
-                      y={-10}
-                      width={90}
-                      height={20}
-                      rx={10}
+                      x={-50}
+                      y={-11}
+                      width={100}
+                      height={22}
+                      rx={11}
                       fill="#ffffff"
                       stroke="#0284c7"
-                      strokeWidth="1"
-                      className="group-hover:fill-sky-50 transition-colors shadow-2xs"
+                      strokeWidth="1.5"
+                      className="group-hover:fill-sky-50 transition-colors shadow-xs"
                     />
                     <text
                       x={0}
-                      y={3.5}
+                      y={4}
                       fill="#0284c7"
-                      fontSize="10"
+                      fontSize="11"
                       fontWeight="bold"
                       fontFamily="'Plus Jakarta Sans', sans-serif"
                       textAnchor="middle"
                       className="pointer-events-none select-none"
                     >
-                      + Add Space
+                      + Insert Space
                     </text>
                   </g>
                 </g>

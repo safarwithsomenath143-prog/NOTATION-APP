@@ -333,11 +333,17 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
 
   // Helper to retrieve extra vertical spacing defined by Space Tool
   const getSystemExtraSpace = (sys: typeof systems[0], globalSysIdx: number) => {
-    const lastMeasure = sys.measures[sys.measures.length - 1]?.measure;
     if (!score.spacingObjects || score.spacingObjects.length === 0) return 0;
-    const match = score.spacingObjects.filter(
-      (s) => (lastMeasure && s.afterMeasureId === lastMeasure.id) || s.systemIndex === globalSysIdx
-    );
+    const lastMeasure = sys.measures[sys.measures.length - 1]?.measure;
+    const match = score.spacingObjects.filter((s) => {
+      if (s.afterMeasureId) {
+        return (
+          (lastMeasure && s.afterMeasureId === lastMeasure.id) ||
+          sys.measures.some((mItem) => mItem.measure.id === s.afterMeasureId)
+        );
+      }
+      return s.systemIndex === globalSysIdx;
+    });
     return match.reduce((sum, s) => sum + (s.amount || 0), 0);
   };
 
@@ -1578,8 +1584,11 @@ export const NotationRenderer: React.FC<NotationRendererProps> = ({
                     <PageSpacingLayer
                       pageIndex={pageIndex}
                       pageWidth={pageWidth}
+                      pageHeight={pageHeight}
+                      pageMarginBottom={pageMarginBottom}
                       staffMarginLeft={staffMarginLeft}
                       staffMarginRight={staffMarginRight}
+                      zoom={zoom}
                       systems={pageSystems}
                       systemPositions={systemPositions}
                       spacingObjects={score.spacingObjects || []}

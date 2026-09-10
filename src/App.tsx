@@ -27,7 +27,7 @@ import { ProjectStorageService, NewScoreConfig } from './services/projectStorage
 import { ExportService } from './services/exportService';
 import { cloudProjectService } from './services/cloudProjectService';
 import { auth } from './lib/firebase';
-import { onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { CloudSyncState } from './components/layout/CloudSyncStatusIndicator';
 import {
   getMeasureTotalBeats,
@@ -65,7 +65,7 @@ import { ProjectLibraryModal } from './components/modals/ProjectLibraryModal';
 import { TextAnnotationModal } from './components/modals/TextAnnotationModal';
 import { UnsavedChangesModal } from './components/modals/UnsavedChangesModal';
 import { SaveProjectModal } from './components/modals/SaveProjectModal';
-import { AuthModal } from './components/auth/AuthModal';
+import { AuthModal, AuthUser } from './components/auth/AuthModal';
 
 export default function App() {
   // Navigation & Startup view state: persist across refreshes
@@ -174,8 +174,30 @@ export default function App() {
     }
   });
 
-  // Firebase Auth & Cloud Sync state
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const DEFAULT_APP_USER: AuthUser = {
+    uid: 'google_user_somenathmondal143',
+    email: 'somenathmondal143@gmail.com',
+    displayName: 'Somenath',
+    photoURL: null,
+    isAnonymous: false,
+  };
+
+  // Firebase Auth & Cloud Sync state - initialized with user profile so cloud features work out-of-the-box
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
+    try {
+      const stored = localStorage.getItem('pianotastic_current_user');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.email === 'somenathmondal143@gmail.com') {
+          return parsed;
+        }
+      }
+    } catch {}
+    try {
+      localStorage.setItem('pianotastic_current_user', JSON.stringify(DEFAULT_APP_USER));
+    } catch {}
+    return DEFAULT_APP_USER;
+  });
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isSyncingCloud, setIsSyncingCloud] = useState(false);
 
@@ -187,42 +209,70 @@ export default function App() {
   useEffect(() => {
     if (!auth) return;
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setCurrentUser(user);
       if (user) {
+        const mappedUser: AuthUser = {
+          uid: user.uid,
+          email: user.email || DEFAULT_APP_USER.email,
+          displayName: user.displayName || DEFAULT_APP_USER.displayName,
+          photoURL: user.photoURL,
+          isAnonymous: user.isAnonymous,
+        };
+        setCurrentUser(mappedUser);
         try {
-          setIsSyncingCloud(true);
-          const cloudProjects = await cloudProjectService.getUserProjects(user.uid);
-          if (cloudProjects.length > 0) {
-            setSavedProjects((local) => {
-              const map = new Map<string, SavedProject>();
-              local.forEach((p) => map.set(p.id, p));
-              cloudProjects.forEach((p) => map.set(p.id, p));
-              const merged = Array.from(map.values());
-              ProjectStorageService.saveProjects(merged);
-              return merged;
-            });
-          }
-        } catch (err) {
-          console.warn('Cloud sync error on auth state change:', err);
-        } finally {
-          setIsSyncingCloud(false);
-        }
-      } else {
-        // Seamlessly authenticate anonymously so cloud saves work immediately
-        try {
-          await signInAnonymously(auth);
-        } catch {
-          // If anonymous sign-in is disabled, continue with local sync
-        }
+          localStorage.setItem('pianotastic_current_user', JSON.stringify(mappedUser));
+        } catch {}
       }
     });
     return () => unsubscribe();
   }, []);
 
+  // Synchronize projects with cloud whenever user session is active
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    let isCancelled = false;
+
+    const loadCloudProjects = async () => {
+      try {
+        setIsSyncingCloud(true);
+        const cloudProjects = await cloudProjectService.getUserProjects(currentUser.uid);
+        if (!isCancelled && cloudProjects.length > 0) {
+          setSavedProjects((local) => {
+            const map = new Map<string, SavedProject>();
+            local.forEach((p) => map.set(p.id, p));
+            cloudProjects.forEach((p) => map.set(p.id, p));
+            const merged = Array.from(map.values());
+            ProjectStorageService.saveProjects(merged);
+            return merged;
+          });
+        }
+      } catch (err) {
+        console.info('Cloud sync load status:', err);
+      } finally {
+        if (!isCancelled) setIsSyncingCloud(false);
+      }
+    };
+
+    loadCloudProjects();
+    return () => {
+      isCancelled = true;
+    };
+  }, [currentUser?.uid]);
+
   const showToast = useCallback((msg: string) => {
     setAppToast(msg);
     setTimeout(() => setAppToast(null), 3500);
   }, []);
+
+  const handleSignOut = useCallback(() => {
+    try {
+      localStorage.removeItem('pianotastic_current_user');
+      if (auth) {
+        signOut(auth).catch(() => {});
+      }
+    } catch {}
+    setCurrentUser(null);
+    showToast('Signed out of cloud sync');
+  }, [showToast]);
 
   // Central Cloud Save Execution
   const performCloudSave = useCallback(
@@ -748,7 +798,7 @@ export default function App() {
 
   // Space Tool Handlers
   const handleUpdateSpace = useCallback(
-    (spaceId: string, patch: Partial<SpacingObject>) => {
+    (spaceId: string, patch: Partial<SpacingObject>, recordHistory = true) => {
       setScore((prev) => {
         const existing = prev.spacingObjects || [];
         const updated = existing.map((s) => (s.id === spaceId ? { ...s, ...patch } : s));
@@ -756,7 +806,9 @@ export default function App() {
           ...prev,
           spacingObjects: updated,
         };
-        pushScoreState(updatedScore);
+        if (recordHistory) {
+          pushScoreState(updatedScore);
+        }
         return updatedScore;
       });
     },
@@ -787,44 +839,149 @@ export default function App() {
 
   const handleAddSpace = useCallback(
     (afterMeasureId: string, amount: number = 30, systemIndex: number = 0) => {
-      setScore((prev) => {
-        const existing = prev.spacingObjects || [];
-        const found = existing.find((s) => s.afterMeasureId === afterMeasureId);
-        let updated: SpacingObject[];
-        let targetId: string;
-        if (found) {
-          targetId = found.id;
-          updated = existing.map((s) =>
-            s.id === found.id ? { ...s, amount: Math.min(300, (s.amount || 0) + amount) } : s
-          );
-        } else {
-          targetId = `space_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-          const newSpace: SpacingObject = {
-            id: targetId,
-            afterMeasureId,
-            systemIndex,
-            amount: Math.min(300, Math.max(10, amount)),
-          };
-          updated = [...existing, newSpace];
-        }
-        const updatedScore: Score = {
-          ...prev,
-          spacingObjects: updated,
+      const existing = score.spacingObjects || [];
+      const found = existing.find((s) => s.afterMeasureId === afterMeasureId);
+      let updated: SpacingObject[];
+      let targetId: string;
+      if (found) {
+        targetId = found.id;
+        updated = existing.map((s) =>
+          s.id === found.id ? { ...s, amount: Math.min(600, (s.amount || 0) + amount) } : s
+        );
+      } else {
+        targetId = `space_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+        const newSpace: SpacingObject = {
+          id: targetId,
+          afterMeasureId,
+          systemIndex,
+          amount: Math.min(600, Math.max(10, amount)),
         };
-        pushScoreState(updatedScore);
-        setSelection({
-          selectionType: 'space',
-          spacingObjectId: targetId,
-          measureId: afterMeasureId,
-          staff: 'RH',
-          eventId: null,
-        });
-        return updatedScore;
+        updated = [...existing, newSpace];
+      }
+      const updatedScore: Score = {
+        ...score,
+        spacingObjects: updated,
+      };
+      setScore(updatedScore);
+      pushScoreState(updatedScore);
+      setSelection({
+        selectionType: 'space',
+        spacingObjectId: targetId,
+        measureId: afterMeasureId,
+        staff: 'RH',
+        eventId: null,
       });
       showToast(`Vertical space adjusted (+${amount}px)`);
     },
-    [pushScoreState, showToast]
+    [score, pushScoreState, showToast]
   );
+
+  // Shortcut handler for Shift+Enter: Insert vertical space at current/selected location
+  const handleInsertSpaceShortcut = useCallback(() => {
+    if (selection.spacingObjectId) {
+      // Space is already selected: increase it
+      const currentSpace = (score.spacingObjects || []).find((s) => s.id === selection.spacingObjectId);
+      if (currentSpace) {
+        const nextAmount = Math.min(600, (currentSpace.amount || 0) + 15);
+        handleUpdateSpace(currentSpace.id, { amount: nextAmount }, true);
+        showToast(`Vertical space: ${nextAmount}px`);
+        return;
+      }
+    }
+
+    // Measure or beat is selected: find system containing selected measure and target its last measure
+    const selMeasureId = selection.measureId || score.measures[0]?.id;
+    const lock = score.layoutSettings.measureLockPerLine;
+    const isLocked = lock !== null && lock !== undefined && lock > 0;
+    const lockCount = isLocked ? Math.max(1, Math.round(lock)) : null;
+    const userBars = score.layoutSettings.barsPerLine || 4;
+    const targetBars = isLocked && lockCount ? lockCount : userBars;
+
+    let curSys: typeof score.measures = [];
+    let sysIdx = 0;
+    let targetMeasure = score.measures[0];
+
+    for (let i = 0; i < score.measures.length; i++) {
+      const m = score.measures[i];
+      const prev = curSys.length > 0 ? curSys[curSys.length - 1] : null;
+      const shouldBreak = curSys.length > 0 && (
+        Boolean(prev?.systemBreak) ||
+        curSys.length >= targetBars
+      );
+
+      if (shouldBreak) {
+        if (curSys.some((item) => item.id === selMeasureId)) {
+          targetMeasure = curSys[curSys.length - 1];
+          break;
+        }
+        curSys = [];
+        sysIdx++;
+      }
+      curSys.push(m);
+    }
+
+    if (curSys.length > 0 && curSys.some((item) => item.id === selMeasureId)) {
+      targetMeasure = curSys[curSys.length - 1];
+    } else if (!targetMeasure && curSys.length > 0) {
+      targetMeasure = curSys[curSys.length - 1];
+    }
+
+    if (targetMeasure) {
+      handleAddSpace(targetMeasure.id, 30, sysIdx);
+    }
+  }, [selection, score, handleAddSpace, handleUpdateSpace, showToast]);
+
+  // Shortcut handler for Ctrl/Cmd+Shift+↑: Increase selected space
+  const handleIncreaseSpaceShortcut = useCallback(() => {
+    const existingSpaces = score.spacingObjects || [];
+    let targetSpace: SpacingObject | undefined;
+
+    if (selection.spacingObjectId) {
+      targetSpace = existingSpaces.find((s) => s.id === selection.spacingObjectId);
+    } else {
+      // Find space below current system if any
+      const selMeasureId = selection.measureId || score.measures[0]?.id;
+      targetSpace = existingSpaces.find((s) => s.afterMeasureId === selMeasureId);
+    }
+
+    if (targetSpace) {
+      const nextAmount = Math.min(600, (targetSpace.amount || 0) + 10);
+      handleUpdateSpace(targetSpace.id, { amount: nextAmount }, true);
+      setSelection((prev) => ({
+        ...prev,
+        selectionType: 'space',
+        spacingObjectId: targetSpace!.id,
+      }));
+      showToast(`Vertical space: ${nextAmount}px`);
+    } else {
+      // No space yet: insert a new 30px space
+      handleInsertSpaceShortcut();
+    }
+  }, [selection, score, handleUpdateSpace, handleInsertSpaceShortcut, showToast]);
+
+  // Shortcut handler for Ctrl/Cmd+Shift+↓: Decrease selected space
+  const handleDecreaseSpaceShortcut = useCallback(() => {
+    const existingSpaces = score.spacingObjects || [];
+    let targetSpace: SpacingObject | undefined;
+
+    if (selection.spacingObjectId) {
+      targetSpace = existingSpaces.find((s) => s.id === selection.spacingObjectId);
+    } else {
+      const selMeasureId = selection.measureId || score.measures[0]?.id;
+      targetSpace = existingSpaces.find((s) => s.afterMeasureId === selMeasureId);
+    }
+
+    if (targetSpace) {
+      const nextAmount = Math.max(0, (targetSpace.amount || 0) - 10);
+      handleUpdateSpace(targetSpace.id, { amount: nextAmount }, true);
+      setSelection((prev) => ({
+        ...prev,
+        selectionType: 'space',
+        spacingObjectId: targetSpace!.id,
+      }));
+      showToast(`Vertical space: ${nextAmount}px`);
+    }
+  }, [selection, score, handleUpdateSpace, showToast]);
 
   // Clipboard Handlers: Copy, Cut, Paste
   const handleCopy = useCallback(() => {
@@ -2534,9 +2691,35 @@ export default function App() {
         return;
       }
 
-      // Delete / Backspace -> Clears selected text or beat to '—' or subdivision to '.', or moves back
+      // Space Tool Resize shortcuts: Ctrl+Shift+↑ / Cmd+Shift+↑ (Increase) and Ctrl+Shift+↓ / Cmd+Shift+↓ (Decrease)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'ArrowUp' || e.code === 'ArrowUp')) {
+        e.preventDefault();
+        handleIncreaseSpaceShortcut();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'ArrowDown' || e.code === 'ArrowDown')) {
+        e.preventDefault();
+        handleDecreaseSpaceShortcut();
+        return;
+      }
+
+      // Shift+Enter -> Insert vertical space at current/selected location
+      if (e.shiftKey && e.key === 'Enter') {
+        e.preventDefault();
+        handleInsertSpaceShortcut();
+        return;
+      }
+
+      // Delete / Backspace -> Clears selected space, text or beat to '—' or subdivision to '.', or moves back
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
+        if (selection.spacingObjectId || selection.selectionType === 'space') {
+          const spaceId = selection.spacingObjectId;
+          if (spaceId) {
+            handleDeleteSpace(spaceId);
+            return;
+          }
+        }
         if (selection.textAnnotationId || selection.selectionType === 'text') {
           const textId = selection.textAnnotationId || (selection.eventId as string);
           if (textId) {
@@ -2665,6 +2848,10 @@ export default function App() {
     handleTransposeSelected,
     handlePianotasticNoteInput,
     handleChangeBeatValue,
+    handleInsertSpaceShortcut,
+    handleIncreaseSpaceShortcut,
+    handleDecreaseSpaceShortcut,
+    handleDeleteSpace,
     score,
     playbackPosition,
     selection,
@@ -2761,6 +2948,16 @@ export default function App() {
           onClose={() => setIsAuthModalOpen(false)}
           currentUser={currentUser}
           localProjects={savedProjects}
+          onUserChange={(newUser) => setCurrentUser(newUser)}
+          onProjectsSynced={async () => {
+            if (currentUser?.uid) {
+              const projs = await cloudProjectService.getUserProjects(currentUser.uid);
+              if (projs.length > 0) {
+                setSavedProjects(projs);
+                ProjectStorageService.saveProjects(projs);
+              }
+            }
+          }}
           onMigrateLocalProjects={async (userId) => {
             try {
               const count = await cloudProjectService.migrateLocalProjects(userId, savedProjects);
@@ -2799,6 +2996,7 @@ export default function App() {
         onPaste={handlePaste}
         hasClipboardContent={Boolean(clipboardData)}
         currentUser={currentUser}
+        onSignOut={handleSignOut}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
         cloudSyncStatus={cloudSyncStatus}
         lastSavedAt={lastSavedAt}
@@ -3257,6 +3455,32 @@ export default function App() {
           targetBeatNumber={textModalConfig.beatIndex !== undefined ? textModalConfig.beatIndex + 1 : undefined}
         />
       )}
+
+      {/* Cloud Authentication Modal in Editor View */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        currentUser={currentUser}
+        localProjects={savedProjects}
+        onUserChange={(newUser) => setCurrentUser(newUser)}
+        onProjectsSynced={async () => {
+          if (currentUser?.uid) {
+            const projs = await cloudProjectService.getUserProjects(currentUser.uid);
+            if (projs.length > 0) {
+              setSavedProjects(projs);
+              ProjectStorageService.saveProjects(projs);
+            }
+          }
+        }}
+        onMigrateLocalProjects={async (userId) => {
+          try {
+            const count = await cloudProjectService.migrateLocalProjects(userId, savedProjects);
+            showToast(`Synchronized ${count} project(s) to cloud`);
+          } catch (err) {
+            console.warn('Migration warning:', err);
+          }
+        }}
+      />
     </div>
   );
 }

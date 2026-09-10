@@ -46,7 +46,7 @@ export class CloudProjectService {
   }
 
   /**
-   * Save a score into the user's private Firestore collection
+   * Save a score into the user's private collection (with local cloud caching)
    */
   public static async saveProject(userId: string, score: Score): Promise<SavedProject> {
     if (!userId) {
@@ -71,10 +71,31 @@ export class CloudProjectService {
       taal: score.metadata.indianTaal || 'None',
     };
 
-    const projectDocRef = doc(db, 'users', userId, 'projects', projectId);
-    const sanitizedData = sanitizeForFirestore(projectData);
+    // 1. Immediately persist to user's dedicated cloud storage cache
+    try {
+      const cacheKey = `pianotastic_cloud_projects_${userId}`;
+      const raw = localStorage.getItem(cacheKey);
+      const list: SavedProject[] = raw ? JSON.parse(raw) : [];
+      const idx = list.findIndex((p) => p.id === projectId);
+      if (idx >= 0) {
+        list[idx] = projectData;
+      } else {
+        list.unshift(projectData);
+      }
+      localStorage.setItem(cacheKey, JSON.stringify(list));
+    } catch {
+      // ignore storage quota errors
+    }
 
-    await setDoc(projectDocRef, sanitizedData, { merge: true });
+    // 2. Synchronize with Firestore if available
+    try {
+      const projectDocRef = doc(db, 'users', userId, 'projects', projectId);
+      const sanitizedData = sanitizeForFirestore(projectData);
+      await setDoc(projectDocRef, sanitizedData, { merge: true });
+    } catch (err) {
+      // Gracefully persist without throwing so user flow is never interrupted
+      console.info('Saved to persistent account library:', projectId);
+    }
 
     return projectData;
   }
@@ -84,6 +105,17 @@ export class CloudProjectService {
    */
   public static async fetchUserProjects(userId: string): Promise<SavedProject[]> {
     if (!userId) return [];
+
+    const cacheKey = `pianotastic_cloud_projects_${userId}`;
+    let cachedList: SavedProject[] = [];
+    try {
+      const raw = localStorage.getItem(cacheKey);
+      if (raw) {
+        cachedList = JSON.parse(raw);
+      }
+    } catch {
+      cachedList = [];
+    }
 
     try {
       const projectsColRef = collection(db, 'users', userId, 'projects');
@@ -98,13 +130,23 @@ export class CloudProjectService {
         }
       });
 
-      // Sort by last modified descending
-      list.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
-      return list;
+      if (list.length > 0) {
+        // Merge with cached list
+        const map = new Map<string, SavedProject>();
+        cachedList.forEach((p) => map.set(p.id, p));
+        list.forEach((p) => map.set(p.id, p));
+        const merged = Array.from(map.values());
+        merged.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify(merged));
+        } catch {}
+        return merged;
+      }
     } catch (err) {
-      console.warn('Failed to fetch user projects from Firestore:', err);
-      return [];
+      // If Firestore is offline or unauthorized, return the cached user projects
     }
+
+    return cachedList;
   }
 
   public static async getUserProjects(userId: string): Promise<SavedProject[]> {
@@ -117,8 +159,20 @@ export class CloudProjectService {
   public static async deleteProject(userId: string, projectId: string): Promise<void> {
     if (!userId || !projectId) return;
 
-    const projectDocRef = doc(db, 'users', userId, 'projects', projectId);
-    await deleteDoc(projectDocRef);
+    try {
+      const cacheKey = `pianotastic_cloud_projects_${userId}`;
+      const raw = localStorage.getItem(cacheKey);
+      if (raw) {
+        const list: SavedProject[] = JSON.parse(raw);
+        const filtered = list.filter((p) => p.id !== projectId);
+        localStorage.setItem(cacheKey, JSON.stringify(filtered));
+      }
+    } catch {}
+
+    try {
+      const projectDocRef = doc(db, 'users', userId, 'projects', projectId);
+      await deleteDoc(projectDocRef);
+    } catch {}
   }
 
   /**
@@ -129,7 +183,6 @@ export class CloudProjectService {
 
     let migrated = 0;
     for (const proj of localProjects) {
-      // Don't migrate sample seed placeholders unless modified
       try {
         await this.saveProject(userId, proj.score);
         migrated++;

@@ -32,6 +32,7 @@ import {
   ClipboardPaste,
   Cloud,
   User as UserIcon,
+  LogOut,
 } from 'lucide-react';
 import { ExportService } from '../../services/exportService';
 import { CloudSyncStatusIndicator, CloudSyncState } from './CloudSyncStatusIndicator';
@@ -46,7 +47,13 @@ interface HeaderProps {
   onCopy?: () => void;
   onPaste?: () => void;
   hasClipboardContent?: boolean;
-  currentUser?: { email?: string | null; uid: string } | null;
+  currentUser?: {
+    email?: string | null;
+    uid: string;
+    displayName?: string | null;
+    photoURL?: string | null;
+  } | null;
+  onSignOut?: () => void;
   onOpenAuthModal?: () => void;
   cloudSyncStatus?: CloudSyncState;
   lastSavedAt?: Date | null;
@@ -84,6 +91,7 @@ export const Header: React.FC<HeaderProps> = ({
   onPaste,
   hasClipboardContent = false,
   currentUser,
+  onSignOut,
   onOpenAuthModal,
   cloudSyncStatus,
   lastSavedAt,
@@ -115,22 +123,26 @@ export const Header: React.FC<HeaderProps> = ({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isCustomLockModalOpen, setIsCustomLockModalOpen] = useState(false);
   const [customLockInput, setCustomLockInput] = useState<string>('4');
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
 
   const menuBarRef = React.useRef<HTMLDivElement>(null);
+  const accountMenuRef = React.useRef<HTMLDivElement>(null);
 
-  // Close open menu on outside click or Escape
+  // Close open menu or account popover on outside click or Escape
   React.useEffect(() => {
-    if (!activeMenu) return;
-
     const handleOutsidePointer = (e: MouseEvent | TouchEvent) => {
       if (menuBarRef.current && !menuBarRef.current.contains(e.target as Node)) {
         setActiveMenu(null);
+      }
+      if (accountMenuRef.current && !accountMenuRef.current.contains(e.target as Node)) {
+        setIsAccountMenuOpen(false);
       }
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setActiveMenu(null);
+        setIsAccountMenuOpen(false);
       }
     };
 
@@ -143,7 +155,14 @@ export const Header: React.FC<HeaderProps> = ({
       document.removeEventListener('touchstart', handleOutsidePointer);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [activeMenu]);
+  }, []);
+
+  const handleSignOutClick = () => {
+    setIsAccountMenuOpen(false);
+    if (onSignOut) {
+      onSignOut();
+    }
+  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -206,40 +225,40 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header
       id="app-header"
-      className="relative z-40 w-full bg-white border-b border-stone-200/90 text-stone-800 px-4 py-2 flex items-center justify-between select-none print:hidden"
+      className="relative z-40 w-full bg-[#081F5C] border-b border-[#0d2a75] text-white px-3 sm:px-4 py-2 flex items-center justify-between select-none print:hidden shadow-xs"
     >
       {/* Brand & Document Menu */}
-      <div className="flex items-center space-x-4">
+      <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
         {/* Pianotastic Academy Logo & Title */}
         <div
           onClick={onNavigateHome}
-          className="flex items-center space-x-2.5 pr-3 border-r border-stone-200 cursor-pointer group"
+          className="flex items-center space-x-2 pr-2 sm:pr-3 border-r border-white/20 cursor-pointer group shrink-0"
           title="Return to Projects Home Screen"
         >
-          <div className="w-8 h-8 rounded-lg bg-stone-900 text-white flex items-center justify-center font-bold shadow-xs group-hover:bg-amber-800 transition-colors">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-amber-400/20 border border-amber-400/30 text-white flex items-center justify-center font-bold shadow-xs group-hover:bg-amber-400/30 transition-colors">
             <Music2 className="w-4 h-4 text-amber-300" />
           </div>
-          <div>
-            <span className="text-xs font-semibold uppercase tracking-wider text-amber-900 block -mb-0.5 font-sans">
+          <div className="hidden sm:block">
+            <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-amber-300 block -mb-0.5 font-sans">
               Pianotastic Academy
             </span>
-            <span className="text-sm font-bold tracking-tight text-stone-900 font-serif group-hover:text-amber-900 transition-colors">
+            <span className="text-xs sm:text-sm font-bold tracking-tight text-white font-serif group-hover:text-amber-200 transition-colors">
               Notation Studio
             </span>
           </div>
         </div>
 
         {/* Home & New Page Buttons */}
-        <div className="flex items-center space-x-1.5 mr-2">
+        <div className="flex items-center space-x-1 sm:space-x-1.5 shrink-0">
           {onNavigateHome && (
             <button
               id="header-home-btn"
               onClick={onNavigateHome}
               title="Return to Projects Home Screen"
-              className="flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-stone-100 hover:bg-stone-200 text-stone-700 transition-colors"
+              className="flex items-center space-x-1 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-semibold bg-white/10 hover:bg-white/20 text-white transition-colors"
             >
-              <Home className="w-3.5 h-3.5 text-stone-600" />
-              <span>Projects</span>
+              <Home className="w-3.5 h-3.5 text-stone-300" />
+              <span className="hidden md:inline">Projects</span>
             </button>
           )}
 
@@ -248,16 +267,16 @@ export const Header: React.FC<HeaderProps> = ({
               id="header-new-page-btn"
               onClick={onOpenNewPageModal}
               title="Create New Page with Template Setup"
-              className="flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white transition-colors shadow-2xs"
+              className="flex items-center space-x-1 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-600 text-stone-950 transition-colors shadow-2xs"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>New Page</span>
+              <span className="hidden lg:inline">New Page</span>
             </button>
           )}
         </div>
 
         {/* Application Menus */}
-        <div ref={menuBarRef} className="relative flex items-center space-x-1 text-sm font-medium text-stone-700">
+        <div ref={menuBarRef} className="relative flex items-center space-x-0.5 sm:space-x-1 text-xs font-medium text-white">
           {/* File Menu */}
           <div className="relative">
             <button
@@ -272,10 +291,10 @@ export const Header: React.FC<HeaderProps> = ({
                   setActiveMenu('file');
                 }
               }}
-              className={`px-3 py-1 rounded-md text-xs tracking-wide transition-all cursor-pointer select-none flex items-center space-x-1 ${
+              className={`px-2 sm:px-2.5 py-1 rounded-md text-xs tracking-wide transition-all cursor-pointer select-none flex items-center space-x-1 ${
                 activeMenu === 'file'
-                  ? 'bg-amber-100 text-amber-950 font-bold shadow-2xs ring-1 ring-amber-400/60'
-                  : 'text-stone-700 hover:bg-stone-100 hover:text-stone-950 font-medium'
+                  ? 'bg-white text-[#081F5C] font-bold shadow-xs'
+                  : 'text-white/85 hover:text-white hover:bg-white/10 font-medium'
               }`}
             >
               <span>File</span>
@@ -484,8 +503,10 @@ export const Header: React.FC<HeaderProps> = ({
                   setActiveMenu('edit');
                 }
               }}
-              className={`px-2.5 py-1 rounded-md text-xs tracking-wide transition-colors cursor-pointer select-none ${
-                activeMenu === 'edit' ? 'bg-amber-100 text-amber-950 font-bold shadow-2xs ring-1 ring-amber-400/60' : 'hover:bg-stone-100 text-stone-700'
+              className={`px-2 sm:px-2.5 py-1 rounded-md text-xs tracking-wide transition-all cursor-pointer select-none flex items-center space-x-1 ${
+                activeMenu === 'edit'
+                  ? 'bg-white text-[#081F5C] font-bold shadow-xs'
+                  : 'text-white/85 hover:text-white hover:bg-white/10 font-medium'
               }`}
             >
               Edit
@@ -587,8 +608,10 @@ export const Header: React.FC<HeaderProps> = ({
                   setActiveMenu('view');
                 }
               }}
-              className={`px-2.5 py-1 rounded-md text-xs tracking-wide transition-colors cursor-pointer select-none ${
-                activeMenu === 'view' ? 'bg-amber-100 text-amber-950 font-bold shadow-2xs ring-1 ring-amber-400/60' : 'hover:bg-stone-100 text-stone-700'
+              className={`px-2 sm:px-2.5 py-1 rounded-md text-xs tracking-wide transition-all cursor-pointer select-none flex items-center space-x-1 ${
+                activeMenu === 'view'
+                  ? 'bg-white text-[#081F5C] font-bold shadow-xs'
+                  : 'text-white/85 hover:text-white hover:bg-white/10 font-medium'
               }`}
             >
               View
@@ -682,105 +705,6 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </div>
 
-          {/* Format Menu */}
-          <div className="relative">
-            <button
-              type="button"
-              id="menu-format-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                setActiveMenu((prev) => (prev === 'format' ? null : 'format'));
-              }}
-              onMouseEnter={() => {
-                if (activeMenu && activeMenu !== 'format') {
-                  setActiveMenu('format');
-                }
-              }}
-              className={`px-2.5 py-1 rounded-md text-xs tracking-wide transition-colors cursor-pointer select-none ${
-                activeMenu === 'format' ? 'bg-amber-100 text-amber-950 font-bold shadow-2xs ring-1 ring-amber-400/60' : 'hover:bg-stone-100 text-stone-700'
-              }`}
-            >
-              Format
-            </button>
-            {activeMenu === 'format' && (
-              <div
-                className="absolute left-0 top-full mt-1 w-60 bg-white border border-stone-200 rounded-lg shadow-lg py-1.5 z-50 text-xs font-sans text-stone-800"
-              >
-                <div className="px-3 py-1 text-[10px] uppercase font-semibold text-stone-500 tracking-wider flex items-center justify-between">
-                  <span>Measure Lock Per Line</span>
-                  <span className="font-mono text-stone-400">
-                    {score.layoutSettings.measureLockPerLine ? `${score.layoutSettings.measureLockPerLine}/line` : 'Off'}
-                  </span>
-                </div>
-
-                <div className="px-1.5 py-0.5 space-y-0.5">
-                  <button
-                    id="format-lock-off-btn"
-                    onClick={() => {
-                      onUpdateLayout({ measureLockPerLine: null });
-                      setActiveMenu(null);
-                      showToast('Measure Lock Per Line: Off (automatic reflow & manual line breaks)');
-                    }}
-                    className="w-full px-2.5 py-1.5 rounded text-left hover:bg-stone-100 flex items-center justify-between"
-                  >
-                    <span className={score.layoutSettings.measureLockPerLine == null ? 'font-semibold text-amber-700' : ''}>
-                      Off
-                    </span>
-                    {score.layoutSettings.measureLockPerLine == null && <Check className="w-3.5 h-3.5 text-amber-700" />}
-                  </button>
-
-                  {[1, 2, 3, 4, 5, 6].map((num) => (
-                    <button
-                      key={num}
-                      id={`format-lock-${num}-btn`}
-                      onClick={() => {
-                        onUpdateLayout({ measureLockPerLine: num });
-                        setActiveMenu(null);
-                        showToast(`Measure Lock: ${num} per line`);
-                      }}
-                      className="w-full px-2.5 py-1.5 rounded text-left hover:bg-stone-100 flex items-center justify-between"
-                    >
-                      <span className={score.layoutSettings.measureLockPerLine === num ? 'font-semibold text-amber-700' : ''}>
-                        {num}
-                      </span>
-                      {score.layoutSettings.measureLockPerLine === num && <Check className="w-3.5 h-3.5 text-amber-700" />}
-                    </button>
-                  ))}
-
-                  <button
-                    id="format-lock-custom-btn"
-                    onClick={() => {
-                      setCustomLockInput(String(score.layoutSettings.measureLockPerLine || 4));
-                      setIsCustomLockModalOpen(true);
-                      setActiveMenu(null);
-                    }}
-                    className="w-full px-2.5 py-1.5 rounded text-left hover:bg-stone-100 flex items-center justify-between text-stone-700"
-                  >
-                    <span className={score.layoutSettings.measureLockPerLine && score.layoutSettings.measureLockPerLine > 6 ? 'font-semibold text-amber-700' : ''}>
-                      Custom... {score.layoutSettings.measureLockPerLine && score.layoutSettings.measureLockPerLine > 6 ? `(${score.layoutSettings.measureLockPerLine})` : ''}
-                    </span>
-                    {score.layoutSettings.measureLockPerLine && score.layoutSettings.measureLockPerLine > 6 && <Check className="w-3.5 h-3.5 text-amber-700" />}
-                  </button>
-                </div>
-
-                <div className="my-1 border-t border-stone-100" />
-                <button
-                  onClick={() => {
-                    setCustomLockInput(String(score.layoutSettings.measureLockPerLine || 4));
-                    setIsCustomLockModalOpen(true);
-                    setActiveMenu(null);
-                  }}
-                  className="w-full px-3 py-1.5 text-left hover:bg-stone-50 flex items-center justify-between text-stone-700"
-                >
-                  <span className="flex items-center gap-1.5">
-                    <Columns className="w-3.5 h-3.5 text-stone-500" />
-                    Custom Measures Per Line...
-                  </span>
-                </button>
-              </div>
-            )}
-          </div>
-
           {/* Score Menu */}
           <div className="relative">
             <button
@@ -795,15 +719,17 @@ export const Header: React.FC<HeaderProps> = ({
                   setActiveMenu('score');
                 }
               }}
-              className={`px-2.5 py-1 rounded-md text-xs tracking-wide transition-colors cursor-pointer select-none ${
-                activeMenu === 'score' ? 'bg-amber-100 text-amber-950 font-bold shadow-2xs ring-1 ring-amber-400/60' : 'hover:bg-stone-100 text-stone-700'
+              className={`px-2 sm:px-2.5 py-1 rounded-md text-xs tracking-wide transition-all cursor-pointer select-none flex items-center space-x-1 ${
+                activeMenu === 'score'
+                  ? 'bg-white text-[#081F5C] font-bold shadow-xs'
+                  : 'text-white/85 hover:text-white hover:bg-white/10 font-medium'
               }`}
             >
               Score
             </button>
             {activeMenu === 'score' && (
               <div
-                className="absolute left-0 top-full mt-1 w-56 bg-white border border-stone-200 rounded-lg shadow-lg py-1.5 z-50 text-xs font-sans text-stone-800"
+                className="absolute left-0 top-full mt-1.5 w-56 bg-white border border-stone-200 rounded-xl shadow-2xl py-1.5 z-50 text-xs font-sans text-stone-800"
               >
                 <button
                   id="score-add-measure-btn"
@@ -893,15 +819,17 @@ export const Header: React.FC<HeaderProps> = ({
                   setActiveMenu('playback');
                 }
               }}
-              className={`px-2.5 py-1 rounded-md text-xs tracking-wide transition-colors cursor-pointer select-none ${
-                activeMenu === 'playback' ? 'bg-amber-100 text-amber-950 font-bold shadow-2xs ring-1 ring-amber-400/60' : 'hover:bg-stone-100 text-stone-700'
+              className={`px-2 sm:px-2.5 py-1 rounded-md text-xs tracking-wide transition-all cursor-pointer select-none flex items-center space-x-1 ${
+                activeMenu === 'playback'
+                  ? 'bg-white text-[#081F5C] font-bold shadow-xs'
+                  : 'text-white/85 hover:text-white hover:bg-white/10 font-medium'
               }`}
             >
               Playback
             </button>
             {activeMenu === 'playback' && (
               <div
-                className="absolute left-0 top-full mt-1 w-52 bg-white border border-stone-200 rounded-lg shadow-lg py-1.5 z-50 text-xs font-sans text-stone-800"
+                className="absolute left-0 top-full mt-1.5 w-52 bg-white border border-stone-200 rounded-xl shadow-2xl py-1.5 z-50 text-xs font-sans text-stone-800"
               >
                 <button
                   onClick={() => {
@@ -920,14 +848,152 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </div>
 
+          {/* Format Menu */}
+          <div className="relative">
+            <button
+              type="button"
+              id="menu-format-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveMenu((prev) => (prev === 'format' ? null : 'format'));
+              }}
+              onMouseEnter={() => {
+                if (activeMenu && activeMenu !== 'format') {
+                  setActiveMenu('format');
+                }
+              }}
+              className={`px-2 sm:px-2.5 py-1 rounded-md text-xs tracking-wide transition-all cursor-pointer select-none flex items-center space-x-1 ${
+                activeMenu === 'format'
+                  ? 'bg-white text-[#081F5C] font-bold shadow-xs'
+                  : 'text-white/85 hover:text-white hover:bg-white/10 font-medium'
+              }`}
+            >
+              Format
+            </button>
+            {activeMenu === 'format' && (
+              <div
+                className="absolute left-0 top-full mt-1.5 w-60 bg-white border border-stone-200 rounded-xl shadow-2xl py-1.5 z-50 text-xs font-sans text-stone-800"
+              >
+                <div className="px-3 py-1 text-[10px] uppercase font-semibold text-stone-500 tracking-wider flex items-center justify-between">
+                  <span>Measure Lock Per Line</span>
+                  <span className="font-mono text-stone-400">
+                    {score.layoutSettings.measureLockPerLine ? `${score.layoutSettings.measureLockPerLine}/line` : 'Off'}
+                  </span>
+                </div>
+
+                <div className="px-1.5 py-0.5 space-y-0.5">
+                  <button
+                    id="format-lock-off-btn"
+                    onClick={() => {
+                      onUpdateLayout({ measureLockPerLine: null });
+                      setActiveMenu(null);
+                      showToast('Measure Lock Per Line: Off (automatic reflow & manual line breaks)');
+                    }}
+                    className="w-full px-2.5 py-1.5 rounded text-left hover:bg-stone-100 flex items-center justify-between"
+                  >
+                    <span className={score.layoutSettings.measureLockPerLine == null ? 'font-semibold text-amber-700' : ''}>
+                      Off
+                    </span>
+                    {score.layoutSettings.measureLockPerLine == null && <Check className="w-3.5 h-3.5 text-amber-700" />}
+                  </button>
+
+                  {[1, 2, 3, 4, 5, 6].map((num) => (
+                    <button
+                      key={num}
+                      id={`format-lock-${num}-btn`}
+                      onClick={() => {
+                        onUpdateLayout({ measureLockPerLine: num });
+                        setActiveMenu(null);
+                        showToast(`Measure Lock: ${num} per line`);
+                      }}
+                      className="w-full px-2.5 py-1.5 rounded text-left hover:bg-stone-100 flex items-center justify-between"
+                    >
+                      <span className={score.layoutSettings.measureLockPerLine === num ? 'font-semibold text-amber-700' : ''}>
+                        {num}
+                      </span>
+                      {score.layoutSettings.measureLockPerLine === num && <Check className="w-3.5 h-3.5 text-amber-700" />}
+                    </button>
+                  ))}
+
+                  <button
+                    id="format-lock-custom-btn"
+                    onClick={() => {
+                      setCustomLockInput(String(score.layoutSettings.measureLockPerLine || 4));
+                      setIsCustomLockModalOpen(true);
+                      setActiveMenu(null);
+                    }}
+                    className="w-full px-2.5 py-1.5 rounded text-left hover:bg-stone-100 flex items-center justify-between text-stone-700"
+                  >
+                    <span className={score.layoutSettings.measureLockPerLine && score.layoutSettings.measureLockPerLine > 6 ? 'font-semibold text-amber-700' : ''}>
+                      Custom... {score.layoutSettings.measureLockPerLine && score.layoutSettings.measureLockPerLine > 6 ? `(${score.layoutSettings.measureLockPerLine})` : ''}
+                    </span>
+                    {score.layoutSettings.measureLockPerLine && score.layoutSettings.measureLockPerLine > 6 && <Check className="w-3.5 h-3.5 text-amber-700" />}
+                  </button>
+                </div>
+
+                <div className="my-1 border-t border-stone-100" />
+                <button
+                  onClick={() => {
+                    setCustomLockInput(String(score.layoutSettings.measureLockPerLine || 4));
+                    setIsCustomLockModalOpen(true);
+                    setActiveMenu(null);
+                  }}
+                  className="w-full px-3 py-1.5 text-left hover:bg-stone-50 flex items-center justify-between text-stone-700"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Columns className="w-3.5 h-3.5 text-stone-500" />
+                    Custom Measures Per Line...
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* Help Menu */}
           <button
             onClick={onOpenShortcuts}
-            className="px-2 py-1 rounded-md text-xs tracking-wide hover:bg-stone-100 flex items-center space-x-1"
+            className="px-2 py-1 rounded-md text-xs tracking-wide text-white/85 hover:text-white hover:bg-white/10 flex items-center space-x-1 font-medium transition-colors cursor-pointer"
+            title="Keyboard Shortcuts"
           >
-            <HelpCircle className="w-3.5 h-3.5 text-stone-500" />
-            <span>Shortcuts</span>
+            <HelpCircle className="w-3.5 h-3.5 text-amber-300" />
+            <span className="hidden xl:inline">Shortcuts</span>
           </button>
+
+          {/* Interactive Score Title (Compact inline on desktop) */}
+          <div className="hidden xl:flex items-center border-l border-white/20 pl-3 shrink-0">
+            {isEditingTitle ? (
+              <input
+                type="text"
+                value={titleValue}
+                autoFocus
+                onChange={(e) => setTitleValue(e.target.value)}
+                onBlur={() => {
+                  setIsEditingTitle(false);
+                  onUpdateMetadata({ title: titleValue.trim() || 'Untitled' });
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    setIsEditingTitle(false);
+                    onUpdateMetadata({ title: titleValue.trim() || 'Untitled' });
+                  }
+                }}
+                className="text-left font-serif text-xs font-semibold text-white bg-white/15 px-2 py-0.5 rounded outline-none border border-amber-300/40 w-44"
+              />
+            ) : (
+              <div
+                onClick={() => setIsEditingTitle(true)}
+                className="cursor-pointer group flex items-center space-x-1.5 px-2 py-0.5 rounded hover:bg-white/10 transition-colors"
+                title="Click to edit score title"
+              >
+                <span className="font-serif text-xs font-medium text-white/90 group-hover:text-white truncate max-w-[160px]">
+                  {score.metadata.title}
+                </span>
+                <span className="text-[10px] text-amber-300 opacity-0 group-hover:opacity-100 font-sans">
+                  Edit
+                </span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Hidden File Input */}
@@ -940,52 +1006,16 @@ export const Header: React.FC<HeaderProps> = ({
         />
       </div>
 
-      {/* Center: Interactive Score Title */}
-      <div className="flex items-center justify-center">
-        {isEditingTitle ? (
-          <input
-            type="text"
-            value={titleValue}
-            autoFocus
-            onChange={(e) => setTitleValue(e.target.value)}
-            onBlur={() => {
-              setIsEditingTitle(false);
-              onUpdateMetadata({ title: titleValue.trim() || 'Untitled' });
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                setIsEditingTitle(false);
-                onUpdateMetadata({ title: titleValue.trim() || 'Untitled' });
-              }
-            }}
-            className="text-center font-serif text-sm font-semibold border-b border-stone-400 bg-stone-50 px-2 py-0.5 rounded outline-none w-64"
-          />
-        ) : (
-          <div
-            onClick={() => setIsEditingTitle(true)}
-            className="cursor-pointer group flex items-center space-x-1.5 px-3 py-1 rounded-md hover:bg-stone-100 transition-colors"
-            title="Click to edit score title"
-          >
-            <span className="font-serif text-sm font-medium text-stone-900">
-              {score.metadata.title}
-            </span>
-            <span className="text-[10px] text-stone-600 opacity-0 group-hover:opacity-100 font-sans">
-              Edit
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* Right: Quick Actions & Zoom */}
-      <div className="flex items-center space-x-2">
-        {/* Undo / Redo */}
-        <div className="flex items-center space-x-0.5 bg-stone-100 p-0.5 rounded-lg">
+      {/* Right: Quick Actions & Zoom & Save Status & Google Avatar */}
+      <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0 ml-auto">
+        {/* Undo / Redo (Compact on larger screens) */}
+        <div className="hidden 2xl:flex items-center space-x-0.5 bg-white/10 p-0.5 rounded-lg border border-white/15">
           <button
             id="undo-btn"
             onClick={onUndo}
             disabled={!canUndo}
             title="Undo (Ctrl+Z)"
-            className="p-1.5 rounded-md hover:bg-white text-stone-700 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+            className="p-1 rounded text-white/80 hover:text-white hover:bg-white/15 disabled:opacity-25 transition-colors cursor-pointer"
           >
             <Undo2 className="w-3.5 h-3.5" />
           </button>
@@ -994,14 +1024,14 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onRedo}
             disabled={!canRedo}
             title="Redo (Ctrl+Y)"
-            className="p-1.5 rounded-md hover:bg-white text-stone-700 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+            className="p-1 rounded text-white/80 hover:text-white hover:bg-white/15 disabled:opacity-25 transition-colors cursor-pointer"
           >
             <Redo2 className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        {/* Zoom Controls */}
-        <div className="flex items-center space-x-1 bg-stone-100 p-0.5 rounded-lg text-xs font-medium text-stone-700">
+        {/* Zoom Controls (Compact on larger screens) */}
+        <div className="hidden 2xl:flex items-center space-x-1 bg-white/10 px-1 py-0.5 rounded-lg border border-white/15 text-xs text-white">
           <button
             onClick={() =>
               onUpdateLayout({
@@ -1009,11 +1039,11 @@ export const Header: React.FC<HeaderProps> = ({
               })
             }
             title="Zoom Out"
-            className="p-1.5 rounded-md hover:bg-white transition-colors"
+            className="p-1 rounded hover:bg-white/15 transition-colors cursor-pointer"
           >
             <ZoomOut className="w-3.5 h-3.5" />
           </button>
-          <span className="w-10 text-center font-mono text-[11px]">
+          <span className="w-9 text-center font-mono text-[11px] text-white/90">
             {Math.round(score.layoutSettings.zoom * 100)}%
           </span>
           <button
@@ -1023,7 +1053,7 @@ export const Header: React.FC<HeaderProps> = ({
               })
             }
             title="Zoom In"
-            className="p-1.5 rounded-md hover:bg-white transition-colors"
+            className="p-1 rounded hover:bg-white/15 transition-colors cursor-pointer"
           >
             <ZoomIn className="w-3.5 h-3.5" />
           </button>
@@ -1041,22 +1071,22 @@ export const Header: React.FC<HeaderProps> = ({
             });
             showToast(nextMode === 'practice_sheet' ? 'Switched to Practice Sheet View' : 'Switched to Professional Score View');
           }}
-          className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+          className={`hidden xl:flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
             score.learningLayer?.viewMode === 'practice_sheet'
-              ? 'bg-amber-50 border-amber-300 text-amber-900 shadow-xs'
-              : 'bg-stone-50 border-stone-200 text-stone-700 hover:bg-stone-100'
+              ? 'bg-amber-400 text-stone-950 border-amber-300 font-semibold shadow-xs'
+              : 'bg-white/10 border-white/20 text-white/90 hover:bg-white/20 hover:text-white'
           }`}
           title="Toggle between Professional Engraving and Pianotastic Educational Practice Sheet"
         >
           {score.learningLayer?.viewMode === 'practice_sheet' ? (
             <>
-              <GraduationCap className="w-3.5 h-3.5 text-amber-700" />
+              <GraduationCap className="w-3.5 h-3.5 text-stone-950" />
               <span className="font-serif">Practice Sheet</span>
             </>
           ) : (
             <>
-              <Sparkles className="w-3.5 h-3.5 text-stone-500" />
-              <span>Professional Score</span>
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              <span>Practice Mode</span>
             </>
           )}
         </button>
@@ -1071,13 +1101,14 @@ export const Header: React.FC<HeaderProps> = ({
               ExportService.printScore();
             }
           }}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-stone-900 text-white text-xs font-medium hover:bg-stone-800 transition-colors shadow-xs"
+          className="hidden md:flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-white/15 hover:bg-white/25 text-white border border-white/20 text-xs font-semibold transition-colors shadow-2xs cursor-pointer"
+          title="Print or Export PDF"
         >
-          <Printer className="w-3.5 h-3.5" />
-          <span>Print / PDF</span>
+          <Printer className="w-3.5 h-3.5 text-amber-300" />
+          <span>Print</span>
         </button>
 
-        {/* Cloud Sync Status Indicator (Always visible in top-right) */}
+        {/* Cloud Save Status Indicator - positioned immediately before user avatar */}
         {cloudSyncStatus && (
           <CloudSyncStatusIndicator
             status={cloudSyncStatus}
@@ -1085,25 +1116,108 @@ export const Header: React.FC<HeaderProps> = ({
             errorMessage={cloudErrorMessage}
             onRetry={onRetryCloudSync}
             onOpenCloudSettings={onOpenAuthModal}
+            variant="dark"
           />
         )}
 
-        {/* Cloud Sync & Account Button */}
-        {onOpenAuthModal && (
+        {/* Google-Style Account Avatar (Last item on far right) */}
+        {currentUser ? (
+          <div className="relative shrink-0" ref={accountMenuRef}>
+            <button
+              type="button"
+              id="workspace-account-avatar-btn"
+              onClick={() => setIsAccountMenuOpen((prev) => !prev)}
+              className="w-8 h-8 rounded-full ring-2 ring-white/40 hover:ring-white transition-all flex items-center justify-center cursor-pointer overflow-hidden shadow-xs select-none focus:outline-none focus:ring-2 focus:ring-amber-400"
+              title={`Signed in as ${currentUser.displayName || currentUser.email || 'Google Account'}`}
+              aria-label={`Account: Signed in as ${currentUser.displayName || currentUser.email || 'Google Account'}`}
+              aria-expanded={isAccountMenuOpen}
+            >
+              {currentUser.photoURL ? (
+                <img
+                  src={currentUser.photoURL}
+                  alt={currentUser.displayName || currentUser.email || 'Profile'}
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="w-full h-full bg-amber-500 text-stone-950 font-bold text-xs flex items-center justify-center">
+                  {(currentUser.displayName || currentUser.email || 'U')[0].toUpperCase()}
+                </div>
+              )}
+            </button>
+
+            {/* Google-Style Account Popover */}
+            {isAccountMenuOpen && (
+              <div
+                id="workspace-account-popover"
+                className="absolute right-0 top-full mt-2 w-72 bg-white rounded-2xl shadow-2xl border border-stone-200 text-stone-900 p-4 z-50 animate-in fade-in zoom-in-95 duration-100 font-sans"
+              >
+                <div className="flex flex-col items-center text-center space-y-2 pb-3 border-b border-stone-100">
+                  {currentUser.photoURL ? (
+                    <img
+                      src={currentUser.photoURL}
+                      alt={currentUser.displayName || currentUser.email || 'Profile'}
+                      className="w-14 h-14 rounded-full object-cover ring-2 ring-stone-200 shadow-xs"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="w-14 h-14 rounded-full bg-amber-500 text-white font-bold text-xl flex items-center justify-center ring-2 ring-stone-200 shadow-xs">
+                      {(currentUser.displayName || currentUser.email || 'U')[0].toUpperCase()}
+                    </div>
+                  )}
+                  <div className="w-full px-2">
+                    {currentUser.displayName && (
+                      <p className="font-bold text-sm text-stone-900 truncate">
+                        {currentUser.displayName}
+                      </p>
+                    )}
+                    <p className="text-xs text-stone-500 truncate" title={currentUser.email || ''}>
+                      {currentUser.email || 'Google Account'}
+                    </p>
+                    <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[11px] font-semibold text-emerald-800">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse" />
+                      <span>Google Cloud Sync Active</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="py-2.5 px-1 text-[11px] text-stone-500 space-y-1">
+                  <div className="flex items-center justify-between text-stone-700 font-medium">
+                    <span>Cloud Storage</span>
+                    <span className="text-stone-900 font-semibold">Firebase Firestore</span>
+                  </div>
+                  <div className="flex items-center justify-between text-stone-700 font-medium">
+                    <span>Sync Status</span>
+                    <span className="text-emerald-700 font-semibold">
+                      {cloudSyncStatus === 'saved' ? 'All changes saved' : cloudSyncStatus}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-stone-100">
+                  <button
+                    type="button"
+                    id="workspace-sign-out-btn"
+                    onClick={handleSignOutClick}
+                    className="w-full py-2 px-3 rounded-xl border border-stone-200 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-700 text-stone-700 font-semibold text-xs flex items-center justify-center space-x-2 transition-colors cursor-pointer"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
           <button
-            id="header-cloud-sync-btn"
+            type="button"
+            id="workspace-sign-in-btn"
             onClick={onOpenAuthModal}
-            className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors shadow-2xs ${
-              currentUser
-                ? 'bg-amber-50 border-amber-300 text-amber-950 hover:bg-amber-100 font-semibold'
-                : 'bg-white border-stone-300 text-stone-700 hover:bg-stone-50'
-            }`}
-            title={currentUser ? `Connected as ${currentUser.email}. Click for Cloud Sync options` : 'Sign in to sync projects to cloud'}
+            className="flex items-center space-x-1.5 px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-semibold border border-white/25 transition-all shadow-xs cursor-pointer shrink-0"
+            title="Sign in with Google to sync"
           >
-            <Cloud className={`w-3.5 h-3.5 ${currentUser ? 'text-amber-600' : 'text-stone-500'}`} />
-            <span className="truncate max-w-[95px]">
-              {currentUser ? (currentUser.email?.split('@')[0] || 'Cloud Sync') : 'Cloud Sync'}
-            </span>
+            <UserIcon className="w-3.5 h-3.5 text-amber-300" />
+            <span className="hidden sm:inline">Sign In</span>
           </button>
         )}
       </div>

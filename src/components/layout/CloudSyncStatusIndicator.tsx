@@ -24,6 +24,7 @@ interface CloudSyncStatusIndicatorProps {
   onRetry?: () => void;
   onOpenCloudSettings?: () => void;
   className?: string;
+  variant?: 'dark' | 'light';
 }
 
 export const CloudSyncStatusIndicator: React.FC<CloudSyncStatusIndicatorProps> = ({
@@ -33,6 +34,7 @@ export const CloudSyncStatusIndicator: React.FC<CloudSyncStatusIndicatorProps> =
   onRetry,
   onOpenCloudSettings,
   className = '',
+  variant = 'dark',
 }) => {
   const [isTooltipOpen, setIsTooltipOpen] = useState(false);
 
@@ -82,6 +84,8 @@ export const CloudSyncStatusIndicator: React.FC<CloudSyncStatusIndicatorProps> =
 
   const tooltip = getTooltipContent();
 
+  const isDark = variant === 'dark';
+
   return (
     <div
       className={`relative inline-flex items-center font-sans ${className}`}
@@ -94,55 +98,80 @@ export const CloudSyncStatusIndicator: React.FC<CloudSyncStatusIndicatorProps> =
           type="button"
           id="cloud-sync-status-btn"
           onClick={onOpenCloudSettings}
-          className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold text-emerald-800 bg-emerald-50/90 border border-emerald-300/80 hover:bg-emerald-100 transition-colors shadow-2xs cursor-pointer select-none"
+          className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-semibold transition-all shadow-xs cursor-pointer select-none ${
+            isDark
+              ? 'text-emerald-300 bg-emerald-950/70 border border-emerald-500/50 hover:bg-emerald-900/80 hover:border-emerald-400'
+              : 'text-emerald-800 bg-emerald-50/90 border border-emerald-300/80 hover:bg-emerald-100'
+          }`}
           title="All changes saved to cloud"
+          aria-label="Saved to cloud"
         >
-          <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[2.5]" />
-          <span className="hidden sm:inline">Saved</span>
+          <Check className={`w-3.5 h-3.5 stroke-[2.5] ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
+          <span>Saved</span>
         </button>
       )}
 
       {status === 'saving' && (
         <div
           id="cloud-sync-status-btn"
-          className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-amber-900 bg-amber-50/90 border border-amber-300/80 shadow-2xs select-none animate-pulse"
+          className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-medium shadow-xs select-none animate-pulse ${
+            isDark
+              ? 'text-amber-200 bg-amber-950/70 border border-amber-500/50'
+              : 'text-amber-900 bg-amber-50/90 border border-amber-300/80'
+          }`}
           title="Saving latest changes..."
+          aria-label="Saving changes to cloud"
         >
-          <RefreshCw className="w-3.5 h-3.5 text-amber-700 animate-spin" />
-          <span className="hidden sm:inline font-sans">Saving…</span>
+          <RefreshCw className={`w-3.5 h-3.5 animate-spin ${isDark ? 'text-amber-300' : 'text-amber-700'}`} />
+          <span className="font-sans">Saving…</span>
         </div>
       )}
 
       {status === 'unsaved' && (
         <div
           id="cloud-sync-status-btn"
-          className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-stone-700 bg-stone-100 border border-stone-300 shadow-2xs select-none"
+          className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-medium shadow-xs select-none ${
+            isDark
+              ? 'text-stone-300 bg-white/10 border border-white/20'
+              : 'text-stone-700 bg-stone-100 border border-stone-300'
+          }`}
           title="Unsaved changes pending sync"
+          aria-label="Unsaved changes"
         >
-          <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
-          <span className="hidden sm:inline">Unsaved</span>
+          <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+          <span>Unsaved</span>
         </div>
       )}
 
       {status === 'loading' && (
         <div
           id="cloud-sync-status-btn"
-          className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-stone-600 bg-stone-50 border border-stone-200 shadow-2xs select-none"
+          className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-medium shadow-xs select-none ${
+            isDark
+              ? 'text-stone-300 bg-white/10 border border-white/20'
+              : 'text-stone-600 bg-stone-50 border border-stone-200'
+          }`}
           title="Loading cloud project..."
+          aria-label="Loading project"
         >
-          <RefreshCw className="w-3.5 h-3.5 text-stone-500 animate-spin" />
-          <span className="hidden sm:inline">Loading…</span>
+          <RefreshCw className={`w-3.5 h-3.5 animate-spin ${isDark ? 'text-stone-300' : 'text-stone-500'}`} />
+          <span>Loading…</span>
         </div>
       )}
 
       {status === 'offline' && (
         <div
           id="cloud-sync-status-btn"
-          className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-stone-600 bg-stone-100 border border-stone-300 shadow-2xs select-none"
+          className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-medium shadow-xs select-none ${
+            isDark
+              ? 'text-stone-300 bg-white/10 border border-white/20'
+              : 'text-stone-600 bg-stone-100 border border-stone-300'
+          }`}
           title="Offline — changes will sync when online"
+          aria-label="Offline"
         >
-          <CloudOff className="w-3.5 h-3.5 text-stone-500" />
-          <span className="hidden sm:inline">Offline</span>
+          <CloudOff className={`w-3.5 h-3.5 ${isDark ? 'text-stone-300' : 'text-stone-500'}`} />
+          <span>Offline</span>
         </div>
       )}
 
@@ -151,10 +180,15 @@ export const CloudSyncStatusIndicator: React.FC<CloudSyncStatusIndicatorProps> =
           type="button"
           id="cloud-sync-status-btn"
           onClick={onRetry}
-          className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold text-red-800 bg-red-50 border border-red-300 hover:bg-red-100 transition-colors shadow-2xs cursor-pointer select-none"
+          className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-semibold transition-colors shadow-xs cursor-pointer select-none ${
+            isDark
+              ? 'text-rose-200 bg-rose-950/80 border border-rose-500/60 hover:bg-rose-900/90'
+              : 'text-red-800 bg-red-50 border border-red-300 hover:bg-red-100'
+          }`}
           title="Cloud sync failed. Click to retry."
+          aria-label="Cloud sync failed. Click to retry."
         >
-          <AlertCircle className="w-3.5 h-3.5 text-red-600 shrink-0" />
+          <AlertCircle className={`w-3.5 h-3.5 shrink-0 ${isDark ? 'text-rose-400' : 'text-red-600'}`} />
           <span className="font-medium">
             Sync failed <span className="font-bold underline ml-0.5">· Retry</span>
           </span>
